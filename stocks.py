@@ -1,6 +1,7 @@
 """Compare two NSE stocks using skip lists keyed by trading date.
 
   python stocks.py TATAPOWER RELIANCE --days 180
+  python stocks.py TATAPOWER RELIANCE --crawl        # crawl nseindia.com with Selenium
   python stocks.py --csv TATAPOWER.csv RELIANCE.csv   # NSE "Historical Data" CSV exports
 """
 
@@ -10,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from crawl import crawl, parse_nse_frame
 from skiplist import SkipList
 
 
@@ -26,11 +28,7 @@ def from_yfinance(symbol, days):
 
 def from_nse_csv(path):
     """Parse the CSV that nseindia.com's Historical Data page exports."""
-    df = pd.read_csv(path)
-    df.columns = df.columns.str.strip().str.upper()
-    dates = pd.to_datetime(df["DATE"], format="%d-%b-%Y")
-    close = df["CLOSE"].astype(str).str.replace(",", "").astype(float)
-    return dict(zip(dates.dt.date, close))
+    return parse_nse_frame(pd.read_csv(path))
 
 
 def build_index(prices):
@@ -80,7 +78,9 @@ def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("symbols", nargs="*", help="two NSE symbols, e.g. TATAPOWER RELIANCE")
     p.add_argument("--csv", nargs=2, metavar="FILE", help="two NSE historical-data CSV exports")
-    p.add_argument("--days", type=int, default=365)
+    p.add_argument("--crawl", action="store_true", help="crawl nseindia.com instead of using yfinance")
+    p.add_argument("--period", default="1Y", help="NSE period tab when crawling (1M, 3M, 6M, 1Y)")
+    p.add_argument("--days", type=int, default=365, help="history length for yfinance")
     args = p.parse_args()
 
     if args.csv:
@@ -88,7 +88,7 @@ def main():
         data = [from_nse_csv(f) for f in args.csv]
     elif len(args.symbols) == 2:
         names = [s.upper() for s in args.symbols]
-        data = [from_yfinance(s, args.days) for s in names]
+        data = [crawl(s, args.period) if args.crawl else from_yfinance(s, args.days) for s in names]
     else:
         p.error("give two symbols or --csv FILE FILE")
 

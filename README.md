@@ -1,6 +1,7 @@
-# NSE Stock Comparison with Skip Lists
+# NSE Crawler + Skip List
 
-Compare two National Stock Exchange (India) stocks over their **common trading
+Crawl historical prices for two National Stock Exchange (India) stocks from
+**nseindia.com** with Selenium, then compare them over their **common trading
 days**, using a **skip list** built from scratch as the date-ordered index.
 
 ```bash
@@ -52,16 +53,37 @@ The implementation is in [`skiplist.py`](skiplist.py) and has no
 dependencies. Tests check it against a Python `dict` over 2,000 random
 operations.
 
+## The crawler
+
+[`crawl.py`](crawl.py) drives Chrome with Selenium 4:
+
+1. Open `nseindia.com/get-quotes/equity?symbol=…`.
+2. Click **Historical Data**, choose a period tab (`1M`, `3M`, `6M`, `1Y`)
+   and apply the filter.
+3. Wait for the price table to load, then parse its HTML with pandas into
+   `{date: close}`.
+
+It uses **explicit waits** (`WebDriverWait`) instead of fixed `sleep`s, and
+Selenium Manager downloads a matching chromedriver automatically. NSE
+redesigns its pages from time to time, so all element locators are kept in
+one `LOCATORS` dict. When the site changes, that dict is the only thing to
+update. The table-parsing half is unit-tested offline.
+
+NSE sometimes blocks automated browsers. When that happens, use the CSV or
+yfinance loaders below; they feed the same skip-list analysis.
+
 ## Usage
 
 ```bash
 pip install -r requirements.txt
 
-# Live data (Yahoo Finance, NSE tickers)
-python stocks.py TATAPOWER RELIANCE --days 365
+# Crawl nseindia.com (needs Google Chrome installed)
+python stocks.py TATAPOWER RELIANCE --crawl --period 1Y
+python crawl.py TATAPOWER --show-browser       # watch the crawler work
 
-# Or offline, from CSVs downloaded on nseindia.com → stock page → Historical Data → Download
-python stocks.py --csv TATAPOWER.csv RELIANCE.csv
+# Alternatives with the same analysis:
+python stocks.py TATAPOWER RELIANCE --days 365      # Yahoo Finance (NSE tickers)
+python stocks.py --csv TATAPOWER.csv RELIANCE.csv  # CSVs exported from NSE's Historical Data page
 
 pytest -q
 ```
@@ -69,17 +91,18 @@ pytest -q
 ## Project structure
 
 ```
+├── crawl.py               # Selenium crawler for NSE historical data + table parsing
 ├── skiplist.py            # SkipList: insert/get/delete/range/intersection
-├── stocks.py              # data loading (yfinance or NSE CSV), comparison, plot
-└── tests/test_skiplist.py # randomized reference test, range, intersection, CSV parsing
+├── stocks.py              # data sources (crawl / yfinance / CSV), comparison, plot
+└── tests/test_skiplist.py # randomized reference test, range, intersection, CSV + HTML parsing
 ```
 
 ## History
 
-v1 drove a real Chrome browser with Selenium to click through nseindia.com.
-It broke whenever the site layout changed, needed a local chromedriver, and
-had to evade NSE's bot detection. v2 replaces the scraping with NSE's
-official CSV export or the Yahoo Finance API. It also fixes the original
+v1 crawled nseindia.com with Selenium 3. It used fixed sleeps, hardcoded a
+chromedriver path, and used APIs that Selenium 4 later removed. v2 rewrites
+the crawler with Selenium 4, explicit waits and centralized locators, and
+adds yfinance and CSV loaders as fallbacks. It also fixes the original
 skip-list design, which was keyed by **price**, so its "intersection"
 matched two stocks that happened to close at the same value. The list is now
 keyed by **date**, which makes the intersection meaningful.
